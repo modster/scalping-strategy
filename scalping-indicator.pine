@@ -1,0 +1,133 @@
+//@version=5
+
+// This strategy is designed to buy the dips, takes occasional profits, and keep a trailing stop all the way up. 
+// Donchian channels, Bollinger Bands, and Exponential Moving Averages are the technical indicators used.
+// Default sybol is "BTCUSDT"
+// @Greeffer
+
+// I N D I C A T O R
+indicator(shorttitle="Scalping Indicator", title="Greeffer's Scalping Indicator", overlay=true)
+
+// S T R A T E G Y
+// strategy(
+//      "Greeffer's Scalping Strategy",
+//      "Scalping Strategy",
+//      overlay=true,
+//      pyramiding=0,
+//      default_qty_type=strategy.fixed,
+//      default_qty_value=0.01,
+//      initial_capital=500.00,
+//      commission_type=strategy.commission.percent,
+//      commission_value=0.01
+//      )
+
+// I N P U T S
+
+// symbol = input.symbol(defval="BTCUSDT", title="Symbol", tooltip="Select Security") //------------------ buggy
+symbol = "BTCUSDT"
+entryAmount = input(title="Entry amount", defval=0.02)
+exitAmount = input(title="Exit amount", defval=0.001)
+donchianupper = input(title="Upper donchian channel period", defval=20)
+donchianlower = input(title="Lower donchian channel period", defval=20)
+higherTimeFramePeriod = input(title="Higher time frame (minutes)", defval=120)
+
+// E X P O N E N T I A L   M O V I N G   A V E R A G E S
+
+ema08 = ta.ema(close, 8)
+ema17 = ta.ema(close,17)
+ema72 = ta.ema(close,72)
+
+// cast int to string for security() function
+intString = str.tostring(higherTimeFramePeriod)
+
+// Import higher time frame:
+red = request.security(symbol, intString, ema08)
+orange = request.security(symbol, intString, ema17)
+yellow = request.security(symbol, intString, ema72)
+
+// Plots:
+plot(red,title="EMA 08", color=color.rgb(218, 7, 7, 60), linewidth=3, style=plot.style_line)
+plot(orange, title="EMA 17", color=color.rgb(218, 112, 7, 60), linewidth=3, style=plot.style_line)
+plot(yellow,title="EMA 72", color=color.rgb(236, 189, 34, 60), linewidth=4, style=plot.style_line)
+
+// B O L L I N G E R   B A N D S
+
+// S i m p l e   M o v i n g   A v e r a g e
+// calculated from a higher timeframe
+basis = ta.sma(close, 20)
+otherBasis = request.security(symbol, intString, basis)
+
+// S t a n d a r  d   D e v e v i a t i o n
+// calculated from a higher timeframe
+dev = 2.5 * ta.stdev(close, 20)
+otherDev = request.security(symbol, intString, dev)  //-------------------------> use lookahead?
+bbUpper = otherBasis + otherDev
+bbLower = otherBasis - otherDev
+
+plot(bbUpper, title="bbUpper", color=color.rgb(255,25,25,50), linewidth=1, style=plot.style_line)
+plot(bbLower, title="bbLower", color=color.rgb(255,25,25,50), style=plot.style_line)
+
+// D O N C H I A N   C H A N N E L S
+
+lower = ta.lowest(donchianlower)
+upper = ta.highest(donchianupper)
+middle= (upper-lower)/2+lower
+
+// P l o t s :
+plot(middle, title='Middle', color=color.rgb(255,25,25,90), linewidth=2)
+plot(upper, title='Upper', color=color.rgb(0,153,230,70), linewidth=2)
+plot(lower, title='Lower', color=color.rgb(0,153,230,70), linewidth=2)
+
+
+// C O N D I T I O N A L   S T A T E M E N T S
+// Indicators and Strategies each use the SAME conditonal statements.
+
+//  // H O L D
+hold = false
+
+if red<orange and orange<yellow 
+    hold:=false
+else
+    hold:=true
+
+//  // L O N G
+long = false
+
+// E n t r y :
+if low<=lower and hold==false and low<=bbLower
+    long:=true
+else
+    long:=false
+
+// T a k e P r o f i t :
+takeProfit = false
+
+if high>=upper and high>=bbUpper and hold==true
+    takeProfit:=true
+else 
+    takeProfit:=false
+
+// E x i t :
+setNewStop = false
+
+if high>=upper and high>=bbUpper and hold==true
+    setNewStop:=true
+else
+    setNewStop:=false
+
+// L E O B O T
+
+// Entry:
+if long==true
+    alert(message='{"side":"spotMarketBuy","symbol":"'+symbol+'","amount":"'+str.tostring(entryAmount)+'"}', freq=alert.freq_once_per_bar_close)
+    //strategy.entry("long", strategy.long, qty=entryAmount)
+
+// Take Profit:
+if takeProfit==true
+    alert(message='{"side":"spotMarketSell","symbol":"'+symbol+'","amount":"'+str.tostring(exitAmount)+'"}', freq=alert.freq_once_per_bar_close)
+    //strategy.order("profit", strategy.short, qty=exitAmount, when=strategy.position_size>0, comment="take profit")
+
+// Exit:
+if setNewStop==true
+    alert(message='{"side":"setNewqStop","middle":"'+str.tostring(math.round(red))+'","symbol":"'+symbol+'","amount":"'+str.tostring(entryAmount)+'"}', freq=alert.freq_once_per_bar_close) //----------------->Check closePosition isn't buggy with entryAmount
+    //strategy.order("setNewStop", strategy.short, qty=strategy.position_size, stop=red, comment="trailing stop triggered", when=strategy.position_size>0)
